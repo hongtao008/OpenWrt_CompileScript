@@ -24,8 +24,33 @@ calculating_time_end() {
 	endTime=`date +%Y%m%d-%H:%M:%S`
 	endTime_s=`date +%s`
 	sumTime=$[ $endTime_s - $startTime_s ]
+
+	echo -e "$yellow开始时间:$green $startTime ---> $yellow结束时间:$green $endTime $white"
+	echo -e "耗时:"
+
+	#以下代码ｃｏｐｙ　https://blog.csdn.net/weixin_33478575/article/details/116683248
+	local T=$sumTime
+
+	local D=$((T/60/60/24))
+
+	local H=$((T/60/60%24))
+
+	local M=$((T/60%60))
+
+	local S=$((T%60))
+
+	(( $D > 0 )) && printf '%d 天 ' $D
+
+	(( $H > 0 )) && printf '%d 小时 ' $H
+
+	(( $M > 0 )) && printf '%d 分钟 ' $M
+
+	(( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
+
+	printf '%d 秒\n' $S
+
 	echo ""
-	echo -e "$yellow开始时间:$green $startTime ---> $yellow结束时间:$green $endTime" "$yellow耗时:$green $sumTime 秒$white"
+
 }
 
 prompt() {
@@ -68,7 +93,14 @@ source_make_clean() {
 }
 
 rely_on() {
-	sudo apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync bison g++ gcc help2man htop ncurses-term ocaml-nox sharutils yui-compressor make cmake
+	sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+	bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+	git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+	libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
+	mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils \
+	rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+
+	#sudo apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync bison g++ gcc help2man htop ncurses-term ocaml-nox sharutils yui-compressor make cmake
 }
 
 #显示编译文件夹
@@ -1352,8 +1384,8 @@ source_openwrt_Setting_18() {
 }
 
 source_lean() {
-	source_type=`cat "$HOME/$OW/$SF/tmp/source_type"`
-	if [[ "$source_type" == "lean" ]]; then
+	source_type=`git remote show origin | grep "coolsnowwolf" | wc -l`
+	if [[ "$source_type" == "2" ]]; then
 		clear
 		echo -e ">>$green针对lean版本开始配置优化$white" && Time
 		
@@ -1889,6 +1921,7 @@ make_firmware_or_plugin() {
 
 make_compile_firmware() {
 	rm -rf /tmp/compile.log
+	calculating_time_start
 	clear
 	echo "--------------------------------------------------------"
 	echo -e "$green++编译固件是否要使用多线程编译++$white"
@@ -1905,25 +1938,40 @@ make_compile_firmware() {
 	if [[ -z $mk_f ]];then
 		clear && echo "开始执行编译" && Time
 		dl_download
+		make V=s >>/tmp/compile.log &
 		tail -f /tmp/compile.log &
-		make V=s >>/tmp/compile.log
 	else
 		dl_download
 		clear
 		echo -e "你输入的命令是：$green$mk_f$white"
 		echo "准备开始执行编译" && Time
-		tail -f /tmp/compile.log　&
-		$mk_f >>/tmp/compile.log
+		$mk_f >>/tmp/compile.log &
+		tail -f /tmp/compile.log &
 	fi
 	
-	if [[ $? -eq 0 ]]; then
+	if_make
+}
+
+if_make() {
+	#set -x
+	if [[ `cat /tmp/compile.log |grep "make\[1\]: Leaving directory" | wc -l` == "1" ]];then
+		kill_tail=$(ps -an | grep tail | grep -v grep | awk '{print $1}')
+		kill -9 $kill_tail
 		n1_builder
 		if_wo
 		calculating_time_end
 	else
-		echo -e "$red>> 固件编译失败，请查询上面报错代码$white"
-		make_continue_to_compile
+		if [[ `cat /tmp/compile.log |grep "make\: \*\*\* \[world\] Error 2" | wc -l ` == "1" ]]; then
+			kill_tail=$(ps -an | grep tail | grep -v grep | awk '{print $1}')
+			kill -9 $kill_tail
+			echo -e "$red>> 固件编译失败，请查询上面报错代码$white"
+			make_continue_to_compile
+		else
+			sleep 2
+			if_make
+		fi
 	fi
+
 	#by：BoomLee  ITdesk
 }
 
@@ -2133,8 +2181,6 @@ noclean_make() {
 
 update_clean_make() {
 	clear
-	echo -e "$green>>更新脚本到最新$white"　&& sleep 3
-	update_script
 	cd $HOME/$OW/$you_file/lede
 	file_patch="$HOME/$OW/$you_file/lede"
 	echo -e "$green>>文件夹:$yellow$file_patch$green 执行make clean$white" && sleep 3
@@ -2289,6 +2335,19 @@ action3_if() {
 	fi
 }
 
+
+if [[ $(users) == "root" ]];then
+	echo -e "${red}请勿使用root进行编译！！！${white}"
+	exit 0
+fi
+
+git_branch=$(git fetch --all | git branch -v | grep -o "落后")
+if [[  "$git_branch" == "落后" ]]; then
+	echo -e "$green>>更新脚本到最新$white"　&& sleep 3
+	update_script
+else
+	echo -e "$green脚本已经最新$white"
+fi
 
 #copy  by:Toyo  modify:ITdesk
 action1="$1"
